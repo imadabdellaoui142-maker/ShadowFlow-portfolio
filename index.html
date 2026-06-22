@@ -10,7 +10,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet"/>
-<style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+   <style>
 /* ============================================================
    SHADOWFLOW DESIGN TOKENS
 ============================================================ */
@@ -846,7 +847,11 @@ footer{background:var(--shadow);border-top:1px solid var(--border);padding:52px 
     <div class="mprog-track"><div class="mprog-bar" id="deployProg" style="width:0"></div></div>
     <div class="deploy-log" id="deployLog"></div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px;display:none" id="deployDoneBtn" onclick="deployDone()">🌐 View My Portfolio</button>
-  </div>
+    <div id="exportRow" style="display:none;gap:8px;margin-top:8px">
+      <button class="btn btn-accent" style="flex:1;justify-content:center" onclick="copyPortfolioCode()">📋 Copy Code</button>
+      <button class="btn btn-secondary" style="flex:1;justify-content:center" onclick="downloadPortfolioZip()">⬇ Download ZIP</button>
+    </div>
+    <p id="exportLockNote" style="display:none;font-size:0.65rem;color:var(--ash);text-align:center;margin-top:10px;font-family:var(--mono)">🔒 Source code export is a Pro feature — <a href="#" onclick="closeDeployAndShowPricing()" style="color:var(--accent);text-decoration:underline">upgrade to unlock</a></p>  </div>
 </div>
 
 <script>
@@ -1480,6 +1485,13 @@ function runDeploy(){
       const doneBtn=document.getElementById('deployDoneBtn');
       doneBtn.style.display='flex';
       doneBtn.style.justifyContent='center';
+      if(S.plan==='pro'){
+        document.getElementById('exportRow').style.display='flex';
+        document.getElementById('exportLockNote').style.display='none';
+      }else{
+        document.getElementById('exportRow').style.display='none';
+        document.getElementById('exportLockNote').style.display='block';
+      }
       try{history.pushState({},'',`?portfolio=${pid}`)}catch(e){}
     }
   },500);
@@ -1491,7 +1503,101 @@ function deployDone(){
   if(d&&d.html){
     const win=window.open('','_blank');
     if(win){win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet"><title>${d.name} · Portfolio</title></head><body style="margin:0">${d.html}</body></html>`);win.document.close()}}
-  toast('🌐 Live!','Portfolio ready. Opening in new tab...','🌐');
+  toast('🌐 Live!','Portfolio ready. Opening in new tab...','🌐');}
+   /* ============================================================
+   CODE EXPORT — Premium feature: Copy Code / Download ZIP
+============================================================ */
+function buildExportableFiles(d){
+  const html=d.html||genPortfolio(d,d.tmpl,true);
+  const fullHTML=`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${d.name||'Portfolio'}</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+${html}
+<script src="script.js"></script>
+</body>
+</html>`;
+  const css=`/* ${d.name||'Portfolio'} — exported from ShadowFlow Portfolio */
+body{margin:0;font-family:'Inter',sans-serif}
+`;
+  const js=`// ${d.name||'Portfolio'} — exported from ShadowFlow Portfolio
+console.log('Portfolio loaded:', ${JSON.stringify(d.name||'Untitled')});
+`;
+  const readme=`# ${d.name||'Portfolio'}
+
+Exported from ShadowFlow Portfolio (https://shadow-flow-portfolio.vercel.app)
+
+## Files
+- index.html — your portfolio markup
+- style.css  — base styles
+- script.js  — base script
+
+Open index.html in any browser, or deploy this folder to Vercel, Netlify, or GitHub Pages.
+`;
+  return{html:fullHTML,css,js,readme};
+}
+
+function requirePro(actionLabel){
+  if(S.plan!=='pro'){
+    toast('Pro feature',`${actionLabel} requires ShadowFlow Pro`,'🔒');
+    return false;
+  }
+  return true;
+}
+
+function copyPortfolioCode(){
+  if(!requirePro('Code export'))return;
+  const d=loadPortfolio(S.currentPID);
+  if(!d){toast('No portfolio','Build your portfolio first','⚠️');return}
+  const{html}=buildExportableFiles(d);
+  navigator.clipboard.writeText(html).then(()=>{
+    toast('📋 Copied!','Full portfolio HTML copied to clipboard','✅');
+  }).catch(()=>{
+    toast('Copy failed','Your browser blocked clipboard access','⚠️');
+  });
+}
+
+function downloadPortfolioZip(){
+  if(!requirePro('ZIP download'))return;
+  const d=loadPortfolio(S.currentPID);
+  if(!d){toast('No portfolio','Build your portfolio first','⚠️');return}
+  if(typeof JSZip==='undefined'){toast('Error','ZIP library failed to load','⚠️');return}
+
+  const{html,css,js,readme}=buildExportableFiles(d);
+  const zip=new JSZip();
+  zip.file('index.html',html);
+  zip.file('style.css',css);
+  zip.file('script.js',js);
+  zip.file('README.md',readme);
+  const assets=zip.folder('assets');
+  assets.file('.gitkeep','');
+
+  toast('Packaging...','Building your ZIP file','📦');
+  zip.generateAsync({type:'blob'}).then(blob=>{
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`${(d.uname||'portfolio')}-shadowflow.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('⬇ Downloaded!','Your portfolio ZIP is ready','✅');
+  }).catch(()=>{
+    toast('Export failed','Could not generate ZIP file','⚠️');
+  });
+}
+
+function closeDeployAndShowPricing(){
+  document.getElementById('deployModal').classList.remove('open');
+  goTo('pricing');
+
 }
 
 /* ============================================================
